@@ -14,18 +14,48 @@ load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+ALLOWED_USERS = {
+   int(user_id.strip())
+   for user_id in os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
+   if user_id.strip()
+}
+
+def usuario_autorizado(update: Update) -> bool:
+    return update.effective_user.id in ALLOWED_USERS
+
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN não encontrado no .env")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 Repo Monitor ativo!\n\n"
+    usuario = update.effective_user
+
+    nome = usuario.full_name
+    username = f"@{usuario.username}" if usuario.username else "não informado"
+ 
+    telegram_id = usuario.id
+
+    resposta = (
+        "🤖 Repo Monitor\n\n"
+        f"👤 Nome: {nome}\n"
+        f"📱 Telegram: {username}\n"
+        f"🆔 Telegram ID: {telegram_id}\n\n"
         "Use /status para consultar o repositório."
     )
 
+    await update.message.reply_text(resposta)
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not usuario_autorizado(update):
+        await update.message.reply_text(
+            "⛔ Acesso não autorizado.\n\n"
+            f"Seu Telegram ID: {update.effective_user.id}\n"
+            "Solicite ao administrador a liberação do acesso."
+        )
+        return
+
+
     try:
         repo = consultar_repositorio()
         commits = consultar_commits(limite=1)
@@ -54,6 +84,16 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def branches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not usuario_autorizado(update):
+        await update.message.reply_text(
+            "⛔ Acesso não autorizado.\n\n"
+            f"Seu Telegram ID: {update.effective_user.id}\n"
+            "Solicite ao administrador a liberação do acesso."
+        )
+        return
+
+
     try:
         lista = consultar_branches()
 
