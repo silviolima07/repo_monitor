@@ -459,3 +459,436 @@ Ao final desta primeira etapa, o `repo_monitor` já consegue:
 
 O próximo marco será transformar `monitor_branches.py` de um simples
 descobridor de branches em um monitor de atividade por branch.
+
+# Etapa 2 — Integração com Telegram
+
+**Data:** 15/09/2026
+
+## 16. Objetivo da segunda etapa
+
+Após validar o acesso ao repositório privado através da GitHub REST API e os primeiros monitores executados pelo terminal, iniciou-se a segunda etapa do projeto: disponibilizar as consultas através de um bot no Telegram.
+
+A proposta é permitir que os integrantes consultem o estado do projeto sem precisar executar diretamente os scripts Python.
+
+A arquitetura passou a ser:
+
+```text
+Usuário
+   |
+   v
+Telegram
+   |
+   v
+RepoMonitor_bot
+   |
+   v
+bot_repo_monitor.py
+   |
+   v
+github_api.py
+   |
+   v
+GitHub REST API
+   |
+   v
+Residencia-Time2/
+saude-publica-protocolos-clinicos
+```
+
+O bot possui função de consulta. Ele não realiza alterações no repositório monitorado.
+
+## 17. Criação do bot no Telegram
+
+Foi criado um bot exclusivo para o projeto através do BotFather.
+
+Nome utilizado:
+
+```text
+RepoMonitor_bot
+```
+
+O BotFather forneceu um token de autenticação exclusivo.
+
+Por segurança, o token não foi colocado diretamente no código-fonte.
+
+Foi adicionada uma nova variável ao arquivo `.env`:
+
+```env
+TELEGRAM_TOKEN=seu_token_aqui
+```
+
+O arquivo `.env` continua protegido pelo `.gitignore` e não deve ser versionado.
+
+Assim, o projeto passou a utilizar duas credenciais independentes:
+
+```text
+GITHUB_TOKEN
+    |
+    +-- acesso de leitura à GitHub REST API
+
+TELEGRAM_TOKEN
+    |
+    +-- autenticação do RepoMonitor_bot
+```
+
+## 18. Instalação da biblioteca Telegram
+
+A integração foi implementada utilizando a biblioteca:
+
+```text
+python-telegram-bot
+```
+
+Como o projeto utiliza `uv`, a dependência foi adicionada com:
+
+```bash
+uv add python-telegram-bot
+```
+
+O `uv` atualizou as dependências do projeto e seu arquivo de lock.
+
+## 19. Primeiro teste do bot
+
+Foi criado:
+
+```text
+src/bot_repo_monitor.py
+```
+
+Inicialmente o bot foi implementado sem acesso ao GitHub, com o objetivo de testar somente o fluxo:
+
+```text
+Telegram
+    |
+    v
+bot_repo_monitor.py
+    |
+    v
+Ubuntu
+    |
+    v
+Resposta ao Telegram
+```
+
+Foram implementados inicialmente os comandos:
+
+```text
+/start
+/status
+```
+
+O bot foi iniciado com:
+
+```bash
+uv run python src/bot_repo_monitor.py
+```
+
+O comando `/start` confirmou que o bot estava ativo.
+
+O `/status`, nessa primeira versão, retornava apenas uma mensagem de teste.
+
+Essa abordagem permitiu validar a comunicação com o Telegram antes de integrar a GitHub API.
+
+## 20. Refatoração da comunicação com GitHub
+
+Antes de conectar o Telegram ao monitoramento real, foi identificada a necessidade de separar a lógica de acesso à GitHub API da lógica de apresentação dos resultados.
+
+Anteriormente, `monitor.py` realizava tanto a consulta quanto a apresentação no terminal.
+
+Para evitar duplicação de código foi criado:
+
+```text
+src/github_api.py
+```
+
+A arquitetura passou a ser:
+
+```text
+                    github_api.py
+                         |
+          +--------------+--------------+
+          |              |              |
+          v              v              v
+     monitor.py   monitor_branches.py   bot_repo_monitor.py
+```
+
+Dessa forma, terminal e Telegram podem utilizar as mesmas funções de acesso ao GitHub.
+
+## 21. Funções centralizadas em github_api.py
+
+O módulo `github_api.py` passou a carregar as configurações:
+
+```text
+GITHUB_TOKEN
+GITHUB_OWNER
+GITHUB_REPO
+```
+
+e centralizar a comunicação com a GitHub REST API.
+
+As primeiras funções implementadas foram:
+
+```python
+consultar_repositorio()
+consultar_commits()
+consultar_branches()
+```
+
+A comunicação utiliza:
+
+```text
+requests
+python-dotenv
+```
+
+O token é enviado no cabeçalho da requisição e nunca é exibido na saída do programa.
+
+## 22. Validação da nova camada
+
+Após a criação de `github_api.py`, foi realizado um teste independente:
+
+```bash
+uv run python -c "from src.github_api import consultar_repositorio; print(consultar_repositorio()['full_name'])"
+```
+
+O resultado esperado e obtido foi:
+
+```text
+Residencia-Time2/saude-publica-protocolos-clinicos
+```
+
+Isso confirmou que a nova camada de acesso à API estava funcionando antes de conectá-la ao Telegram.
+
+## 23. Integração do /status com GitHub
+
+Depois da validação de `github_api.py`, o comando `/status` do Telegram deixou de retornar uma mensagem estática e passou a realizar uma consulta real ao GitHub.
+
+O fluxo passou a ser:
+
+```text
+/status
+   |
+   v
+bot_repo_monitor.py
+   |
+   +-- consultar_repositorio()
+   |
+   +-- consultar_commits(limite=1)
+   |
+   v
+GitHub REST API
+   |
+   v
+Resposta ao Telegram
+```
+
+O `/status` passou a retornar informações como:
+
+```text
+STATUS DO REPOSITÓRIO
+
+Repositório
+Branch principal
+Issues abertas
+
+Último commit da main
+Autor
+Data
+Mensagem
+```
+
+Nesse momento foi validado o fluxo completo:
+
+```text
+Telegram
+   |
+   v
+RepoMonitor_bot
+   |
+   v
+bot_repo_monitor.py
+   |
+   v
+github_api.py
+   |
+   v
+GitHub REST API
+   |
+   v
+Repositório privado
+   |
+   v
+Resposta ao usuário
+```
+
+## 24. Implementação do comando /branches
+
+Após o funcionamento do `/status`, foi implementado o comando:
+
+```text
+/branches
+```
+
+O comando utiliza:
+
+```python
+consultar_branches()
+```
+
+e consulta dinamicamente as branches existentes.
+
+A resposta inicial, enquanto o repositório possuía somente a `main`, era equivalente a:
+
+```text
+BRANCHES DO REPOSITÓRIO
+
+Total: 1
+
+main
+Último commit: c2e7814
+```
+
+A lista não é cadastrada manualmente.
+
+Quando novas branches forem criadas, elas poderão ser descobertas automaticamente pela próxima consulta à API.
+
+## 25. Estado da arquitetura após a Etapa 2
+
+Ao final desta etapa, a estrutura principal passou a ser:
+
+```text
+repo_monitor/
+├── docs/
+│   └── RELATORIO_REPO_MONITOR.md
+├── src/
+│   ├── github_api.py
+│   ├── monitor.py
+│   ├── monitor_branches.py
+│   └── bot_repo_monitor.py
+├── .env
+├── .gitignore
+├── .python-version
+├── pyproject.toml
+├── uv.lock
+└── README.md
+```
+
+As responsabilidades estão separadas da seguinte forma:
+
+```text
+github_api.py
+    |
+    +-- comunicação centralizada com GitHub
+
+monitor.py
+    |
+    +-- monitoramento pelo terminal
+
+monitor_branches.py
+    |
+    +-- monitoramento de branches pelo terminal
+
+bot_repo_monitor.py
+    |
+    +-- interface de consulta através do Telegram
+```
+
+## 26. Comandos disponíveis no Telegram
+
+Nesta etapa, o bot possui:
+
+```text
+/start
+/status
+/branches
+```
+
+### /start
+
+Confirma que o Repo Monitor está ativo e apresenta a interface inicial.
+
+### /status
+
+Consulta informações reais do repositório através da GitHub REST API.
+
+### /branches
+
+Consulta dinamicamente as branches existentes no repositório.
+
+## 27. Decisão arquitetural
+
+Uma decisão importante desta etapa foi não implementar chamadas diretas entre o bot e os programas de terminal.
+
+Por exemplo, evitou-se:
+
+```text
+bot_repo_monitor.py
+        |
+        v
+   monitor.py
+```
+
+Foi adotado:
+
+```text
+                 github_api.py
+                 /     |     \
+                /      |      \
+               v       v       v
+          monitor   branches   bot
+```
+
+Essa separação evita duplicação e facilita a evolução do projeto.
+
+Quando uma nova consulta à GitHub API for necessária, ela poderá ser implementada uma única vez em `github_api.py` e reutilizada pelas diferentes interfaces.
+
+## 28. Próximas evoluções
+
+As próximas funcionalidades previstas incluem:
+
+- autor do último commit de cada branch;
+- data da última atividade da branch;
+- mensagem do último commit;
+- commits por branch;
+- comparação de cada branch com a `main`;
+- commits à frente da `main`;
+- commits atrás da `main`;
+- Pull Requests abertas;
+- status de Pull Requests;
+- GitHub Actions;
+- consolidação da atividade dos integrantes;
+- novos comandos Telegram;
+- tratamento centralizado de erros;
+- execução permanente do bot como serviço no Ubuntu.
+
+## 29. Marco alcançado
+
+Ao final da Etapa 2, o projeto deixou de ser apenas um conjunto de scripts locais de monitoramento.
+
+Agora existe uma interface remota:
+
+```text
+Pessoa
+   |
+   v
+Telegram
+   |
+   v
+Repo Monitor
+   |
+   v
+GitHub
+```
+
+Isso permite consultar o estado do repositório privado através do Telegram sem acessar diretamente o terminal do servidor.
+
+O projeto mantém separadas:
+
+- credenciais do GitHub;
+- credenciais do Telegram;
+- comunicação com a GitHub API;
+- interface de terminal;
+- interface Telegram.
+
+Essa estrutura fornece uma base para a expansão do monitoramento nas próximas etapas.
+
