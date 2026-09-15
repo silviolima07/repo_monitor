@@ -1,0 +1,20 @@
+[project]
+name = "repo-monitor"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Silvio", email = "silviolima07@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv>=1.2.3",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+repo-monitor = "repo_monitor:main"
+
+[build-system]
+requires = ["uv_build>=0.12.6,<0.13.0"]
+build-backend = "uv_build"
